@@ -3,6 +3,9 @@
 Providers (account plan windows only — never API-key caps):
   - Claude Code: session / all-models / Fable via CLI `/usage` (tmux capture)
   - Grok / xAI: weekly limit via Grok CLI `/usage` (tmux capture)
+  - Z.ai: GLM Coding Plan 5-hour token window + monthly MCP tool usage
+    (GET /api/monitor/usage/quota/limit on api.z.ai / open.bigmodel.cn)
+  - Antigravity: Gemini & Claude/GPT model-group windows via `agy -p /usage`
   - Nous Research: monthly subscription / top-up via Hermes Portal account API
   - Codex / Venice: account rate limits and billing balances
 
@@ -488,6 +491,270 @@ def fetch_grok_cli_quota_windows() -> tuple[list[dict], str | None]:
         return _with_reset_epoch(windows), None
     finally:
         cleanup()
+
+
+# ── Z.ai (GLM Coding Plan) ───────────────────────────────────────────────────
+
+
+def parse_zai_quota(payload: dict) -> tuple[list[dict], dict | None]:
+    """Map the GLM Coding Plan quota/limit response to plan windows.
+
+    Shape (api.z.ai and open.bigmodel.cn):
+      {"limits": [
+         {"type": "TOKENS_LIMIT", "number": 5, "percentage": 29,
+          "nextResetTime": 1788060606398},              # epoch ms
+         {"type": "TIME_LIMIT", "number": 1, "usage": 100, "currentValue": 0,
+          "percentage": 0, "nextResetTime": ...,
+          "usageDetails": [{"modelCode": "search-prime", "usage": 0}, ...]}
+       ], "level": "lite"}
+
+    ``percentage`` is already percent of the window used. Only account-level
+    plan limits are surfaced — never per-model API rate caps.
+    """
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    limits = data.get("limits") if isinstance(data, dict) else None
+    if not isinstance(limits, list):
+        return [], None
+    level = str(data.get("level") or "").strip() or None if isinstance(data, dict) else None
+
+    def _pct(value) -> float | None:
+        if isinstance(value, (int, float)):
+            return max(0.0, min(100.0, float(value)))
+        return None
+
+    def _reset_ms(value) -> float | None:
+        # The API reports epoch milliseconds; windows carry epoch seconds.
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value) / 1000.0
+        return None
+
+    windows: list[dict] = []
+    tool_detail: list[str] = []
+    for item in limits:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or "")
+        if kind == "TOKENS_LIMIT":
+            number = item.get("number")
+            hours = int(number) if isinstance(number, (int, float)) else None
+            label = f"{hours}-hour tokens" if hours else "Token window"
+            windows.append(
+                {
+                    "label": label,
+                    "used_pct": _pct(item.get("percentage")),
+                    "reset_label": None,
+                    "resets_at": _reset_ms(item.get("nextResetTime")),
+                    "id": "five_hour",
+                    "detail": f"Plan: {data.get('level') or 'GLM Coding Plan'}",
+                }
+            )
+        elif kind == "TIME_LIMIT":
+            windows.append(
+                {
+                    "label": "MCP tools (monthly)",
+                    "used_pct": _pct(item.get("percentage")),
+                    "reset_label": None,
+                    "resets_at": _reset_ms(item.get("nextResetTime")),
+                    "id": "mcp_monthly",
+                    "detail": None,
+                }
+            )
+            for usage_item in item.get("usageDetails") or []:
+                if isinstance(usage_item, dict):
+                    code = str(usage_item.get("modelCode") or "").strip()
+                    count = usage_item.get("usage")
+                    if code and isinstance(count, (int, float)):
+                        tool_detail.append(f"{code}: {int(count)}")
+
+    if not windows:
+        return [], None
+
+    capacity = {"plan_level": data.get("level")} if isinstance(data, dict) else None
+    if tool_detail:
+        if capacity is None:
+            capacity = {}
+        capacity["mcp_tool_usage"] = tool_detail
+    return windows, capacity
+
+
+def fetch_zai_quota() -> tuple[list[dict], str | None, dict | None]:
+    """GLM Coding Plan usage via the public monitoring endpoint.
+
+    The coding-plan key doubles as the credential for usage reads, so the
+    account's own plan windows come back — no separate dashboard login.
+    """
+    names = ["ZAI_API_KEY", "GLM_API_KEY"]
+    candidates = _read_env_keys(names)
+    if not candidates:
+        single = _read_env_key(names)
+        if single:
+            candidates = [("key", single)]
+    if not candidates:
+        return (
+            [],
+            "Add a GLM Coding Plan key to ~/.hermes/.env as ZAI_API_KEY "
+            "(or GLM_API_KEY)",
+            None,
+        )
+
+    base = os.environ.get("ZAI_BASE_URL", "https://api.z.ai")
+    last_error: str | None = None
+
+    for _source, api_key in candidates:
+        # Raw key in Authorization (no Bearer) — this is how the official
+        # zai-coding-plugins usage script authenticates.
+        curl_config = 'header = "Authorization: ' + api_key + '"\n'
+        try:
+            child = subprocess.run(
+                [
+                    "curl",
+                    "-sS",
+                    "--max-time",
+                    "20",
+                    "--config",
+                    "-",
+                    "--write-out",
+                    "\n%{http_code}",
+                    "-H",
+                    "Accept-Language: en-US,en",
+                    f"{base}/api/monitor/usage/quota/limit",
+                ],
+                input=curl_config,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            last_error = f"could not start Z.ai request: {exc}"
+            continue
+
+        if child.returncode != 0:
+            last_error = f"Z.ai request failed: {(child.stderr or '').strip() or 'curl error'}"
+            continue
+
+        body, _, status = (child.stdout or "").rpartition("\n")
+        try:
+            code = int(status.strip() or "0")
+        except ValueError:
+            code = 0
+        if code != 200:
+            last_error = f"Z.ai quota unavailable (HTTP {code})"
+            continue
+
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            last_error = "Z.ai sent an unreadable quota response"
+            continue
+
+        # HTTP 200 with an error envelope: {"code":1000,"msg":"Authentication
+        # Failed","success":false} — surface as an auth problem, not a parse
+        # problem.
+        if isinstance(payload, dict) and payload.get("success") is False:
+            last_error = f"Z.ai rejected this key ({payload.get('msg') or 'auth failed'})"
+            continue
+
+        windows, capacity = parse_zai_quota(payload if isinstance(payload, dict) else {})
+        if not windows:
+            last_error = "Z.ai reported no plan windows"
+            continue
+        return windows, None, capacity
+
+    return [], last_error or "Z.ai quota is unreachable", None
+
+
+# ── Antigravity ───────────────────────────────────────────────────────────────
+
+
+def parse_antigravity_usage(text: str) -> list[dict]:
+    """Parse `agy -p /usage` output into plan windows.
+
+    Format observed (tab-separated, one row per model group × window):
+
+        Gemini Models\tWeekly Limit Remaining\t97%\t2026-09-04T21:30:19Z
+        Gemini Models\tFive Hour Limit Remaining\t88%\t2026-08-30T03:23:33Z
+        Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-09-06T00:44:13Z
+        Claude and GPT models\tFive Hour Limit Remaining\t100%\t2026-08-30T05:44:13Z
+
+    The CLI reports remaining; the panel shows used, so used = 100 - remaining.
+    Timestamps are ISO-8601 with Z suffix.
+    """
+    windows: list[dict] = []
+    for raw in text.splitlines():
+        line = raw.rstrip("\r")
+        if not line.strip() or "%" not in line:
+            continue
+        parts = [p.strip() for p in line.split("\t")]
+        if len(parts) < 3:
+            continue
+        group, window, rest = parts[0], parts[1], parts[2]
+        if "Remaining" not in window:
+            continue
+
+        pct_text = rest.split("%", 1)[0].strip()
+        try:
+            remaining = float(pct_text)
+        except ValueError:
+            continue
+
+        resets_at: float | None = None
+        if len(parts) >= 4:
+            resets_at = _parse_iso_epoch(parts[3])
+
+        if "five hour" in window.lower():
+            wid, label = "five_hour", "5-hour"
+        elif "weekly" in window.lower():
+            wid, label = "weekly", "Weekly"
+        else:
+            wid, label = f"w{len(windows)}", window
+
+        prefix = "Gemini" if "gemini" in group.lower() else "Claude/GPT"
+        windows.append(
+            {
+                "label": f"{label} {prefix}",
+                "used_pct": max(0.0, min(100.0, 100.0 - remaining)),
+                "reset_label": None,
+                "resets_at": resets_at,
+                "id": f"{prefix.lower().replace('/', '_')}_{wid}"
+                if wid in ("five_hour", "weekly")
+                else wid,
+                "detail": group,
+            }
+        )
+    return windows
+
+
+def fetch_antigravity_quota() -> tuple[list[dict], str | None, dict | None]:
+    """Antigravity plan windows via the CLI's non-interactive /usage.
+
+    `agy -p '/usage'` expands the in-session slash command in print mode and
+    exits — a plain subprocess read, no tmux capture or OAuth handling here.
+    """
+    agy_bin = _resolve_bin("agy")
+    if not agy_bin:
+        return [], "agy CLI not found on PATH", None
+
+    try:
+        child = subprocess.run(
+            [agy_bin, "-p", "/usage", "--print-timeout", "60s"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=90,
+            cwd=str(_workdir()),
+        )
+    except subprocess.TimeoutExpired:
+        return [], "Antigravity /usage timed out", None
+    except OSError as exc:
+        return [], f"could not start agy: {exc}", None
+
+    text = child.stdout or ""
+    windows = parse_antigravity_usage(text)
+    if not windows:
+        stderr_tail = (child.stderr or "").strip().splitlines()
+        detail = stderr_tail[-1] if stderr_tail else "no parseable windows"
+        return [], f"Antigravity /usage returned no windows ({detail})", None
+    return windows, None, None
 
 
 # ── Codex (OpenAI) ───────────────────────────────────────────────────────────
@@ -1259,6 +1526,8 @@ def _collect_providers() -> list[dict]:
         "anthropic": lambda: (*fetch_claude_cli_quota_windows(), None),
         "grok": lambda: (*fetch_grok_cli_quota_windows(), None),
         "codex": fetch_codex_app_server_quota,
+        "zai": fetch_zai_quota,
+        "antigravity": fetch_antigravity_quota,
         "nous": fetch_nous_portal_usage,
         "venice": venice_job,
     }
@@ -1290,6 +1559,13 @@ def _collect_providers() -> list[dict]:
         pack("anthropic", "Claude Code", "Claude Code CLI /usage", "Session · all models · Fable"),
         pack("grok", "Grok", "Grok CLI /usage", "Weekly plan window"),
         pack("codex", "Codex", "Codex app-server rate limits", "5-hour · weekly"),
+        pack("zai", "Z.ai", "GLM Coding Plan quota API", "5-hour tokens · monthly MCP tools"),
+        pack(
+            "antigravity",
+            "Antigravity",
+            "Antigravity CLI /usage",
+            "Gemini · Claude/GPT windows",
+        ),
         _nous_availability(
             pack("nous", "Nous Research", "Hermes Portal account API", "Monthly subscription · top-up")
         ),
@@ -1306,7 +1582,15 @@ def _flatten_windows(providers: list[dict]) -> list[dict]:
     return out
 
 
-_EXPECTED_PROVIDER_IDS = ("anthropic", "grok", "codex", "nous", "venice")
+_EXPECTED_PROVIDER_IDS = (
+    "anthropic",
+    "grok",
+    "codex",
+    "zai",
+    "antigravity",
+    "nous",
+    "venice",
+)
 
 
 def _providers_look_complete(payload: dict | None) -> bool:
@@ -1379,7 +1663,7 @@ def _snapshot(force: bool = False) -> dict:
         "providers": providers,
         "windows": _flatten_windows(providers),
         "error": "; ".join(errors) if errors and not any_windows else None,
-        "source": "Claude · Grok · Codex · Nous Research · Venice",
+        "source": "Claude · Grok · Codex · Z.ai · Antigravity · Nous Research · Venice",
         "confidence": "actual" if any_windows else "unavailable",
         "refreshed_at": datetime.now(timezone.utc).isoformat(),
         "cache_ttl_sec": _CACHE_TTL_SEC,
@@ -1418,6 +1702,12 @@ async def health():
             "anthropic": {"claude": _which("claude"), "tmux": _which("tmux")},
             "grok": {"grok": _which("grok"), "tmux": _which("tmux")},
             "codex": {"codex": _which("codex")},
+            "zai": {
+                "key": bool(
+                    _read_env_key(["ZAI_API_KEY", "GLM_API_KEY"])
+                )
+            },
+            "antigravity": {"agy": _which("agy")},
             "nous": {"portal": True},
             "venice": {
                 "key": bool(_read_env_key(["VENICE_API_KEY", "HERMES_CUSTOM_VENICE_API_KEY"]))

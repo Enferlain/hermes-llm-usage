@@ -9,7 +9,7 @@
   <img alt="Hermes Desktop plugin" src="https://img.shields.io/badge/Hermes-Desktop%20Plugin-2f81f7?style=flat-square">
   <img alt="JavaScript ESM" src="https://img.shields.io/badge/JavaScript-ESM-f7df1e?style=flat-square&logo=javascript&logoColor=111111">
   <img alt="Python FastAPI backend" src="https://img.shields.io/badge/Python-FastAPI-3776ab?style=flat-square&logo=python&logoColor=white">
-  <img alt="Providers" src="https://img.shields.io/badge/Providers-Claude%20%7C%20Grok%20%7C%20Codex%20%7C%20Nous%20%7C%20Venice-111827?style=flat-square">
+  <img alt="Providers" src="https://img.shields.io/badge/Providers-Claude%20%7C%20Grok%20%7C%20Codex%20%7C%20Z.ai%20%7C%20Antigravity%20%7C%20Nous%20%7C%20Venice-111827?style=flat-square">
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-22c55e?style=flat-square">
   <a href="https://github.com/kfa-ai/hermes-llm-usage/actions/workflows/check.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/kfa-ai/hermes-llm-usage/check.yml?branch=main&style=flat-square&label=check"></a>
   <a href="https://github.com/kfa-ai/hermes-llm-usage/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/kfa-ai/hermes-llm-usage?style=flat-square&label=release"></a>
@@ -26,6 +26,8 @@ At-a-glance plan windows for the providers you actually use inside Hermes:
 | **Claude Code** | Session · All models · Fable (CLI `/usage`) |
 | **Grok** | Weekly (CLI `/usage`) |
 | **Codex** | Weekly (+ 5-hour when present); banked usage-reset pill |
+| **Z.ai** | GLM Coding Plan 5-hour tokens · monthly MCP tools; plan tier |
+| **Antigravity** | Gemini & Claude/GPT model groups: 5-hour + weekly (CLI `/usage`) |
 | **Nous Research** | Monthly subscription allowance, renewal, top-up |
 | **Venice** | USD / DIEM balance (Admin billing API) |
 
@@ -89,6 +91,8 @@ HERMES_HOME=/path/to/profile ./install.sh
 | Claude Code | `claude` + `tmux` on PATH |
 | Grok | `grok` (xAI CLI) + `tmux` |
 | Codex | `codex` CLI (app-server) |
+| Z.ai | GLM Coding Plan key in `$HERMES_HOME/.env` as `ZAI_API_KEY` (or `GLM_API_KEY`); `ZAI_BASE_URL` overrides api.z.ai (e.g. open.bigmodel.cn) |
+| Antigravity | `agy` CLI logged in — reads `agy -p /usage` in print mode |
 | Nous Research | Hermes Portal login (`hermes portal` / `hermes model`) |
 | Venice | **Admin** API key in `$HERMES_HOME/.env` as `VENICE_API_KEY` or `HERMES_CUSTOM_VENICE_API_KEY` |
 

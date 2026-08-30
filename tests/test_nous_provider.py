@@ -61,7 +61,7 @@ class NousProviderTests(TestCase):
         self.assertEqual(capacity["plan_name"], "Plus")
 
     def test_current_cache_requires_nous_provider(self):
-        payload = {"providers": [{"id": provider} for provider in ("anthropic", "grok", "codex", "venice")]}
+        payload = {"providers": [{"id": provider} for provider in ("anthropic", "grok", "codex", "zai", "antigravity", "venice")]}
         self.assertFalse(api._providers_look_complete(payload))
         payload["providers"].append({"id": "nous"})
         self.assertTrue(api._providers_look_complete(payload))

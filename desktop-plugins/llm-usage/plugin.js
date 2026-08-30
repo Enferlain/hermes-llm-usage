@@ -48,7 +48,7 @@ const DEFAULT_PANEL_MODE = 'float'
 const PROVIDERS_STORAGE_KEY = 'visibleProviders.v1'
 const SIZE_STORAGE_KEY = 'floatingSize.v1'
 const QUERY_KEY = [ID, 'usage']
-const DEFAULT_VISIBLE_PROVIDERS = ['anthropic', 'grok', 'codex', 'nous', 'venice']
+const DEFAULT_VISIBLE_PROVIDERS = ['anthropic', 'grok', 'codex', 'zai', 'antigravity', 'nous', 'venice']
 const DEFAULT_FLOATING_SIZE = { width: 330, height: 384 }
 const SIZE_LIMITS = { width: [280, 560], height: [260, 720] }
 
@@ -74,6 +74,11 @@ function shortLabel(window) {
   if (id === 'session' || /session/i.test(window.label)) return 'Session'
   if (id === 'fable' || /fable/i.test(window.label)) return 'Fable'
   if (id === 'all_models' || /all models/i.test(window.label)) return 'All models'
+  if (id === 'gemini_five_hour') return '5-hour Gemini'
+  if (id === 'gemini_weekly') return 'Weekly Gemini'
+  if (id === 'claude_gpt_five_hour') return '5-hour Claude/GPT'
+  if (id === 'claude_gpt_weekly') return 'Weekly Claude/GPT'
+  if (id === 'mcp_monthly') return 'MCP monthly'
   if (id === 'weekly' || /weekly/i.test(window.label)) return 'Weekly'
   if (id === 'five_hour' || /5-hour/i.test(window.label)) return '5-hour'
   if (id === 'diem_epoch') return 'DIEM epoch'
@@ -98,6 +103,16 @@ function orderWindows(providerId, windows) {
     if (providerId === 'codex') {
       if (id === 'five_hour') return 0
       if (id === 'weekly') return 1
+    }
+    if (providerId === 'antigravity') {
+      if (id === 'gemini_five_hour') return 0
+      if (id === 'gemini_weekly') return 1
+      if (id === 'claude_gpt_five_hour') return 2
+      if (id === 'claude_gpt_weekly') return 3
+    }
+    if (providerId === 'zai') {
+      if (id === 'five_hour') return 0
+      if (id === 'mcp_monthly') return 1
     }
     return 3
   }
@@ -613,6 +628,8 @@ const PROVIDER_OPTIONS = [
   { id: 'anthropic', label: 'Claude Code' },
   { id: 'grok', label: 'Grok' },
   { id: 'codex', label: 'Codex' },
+  { id: 'zai', label: 'Z.ai' },
+  { id: 'antigravity', label: 'Antigravity' },
   { id: 'nous', label: 'Nous Research' },
   { id: 'venice', label: 'Venice' },
 ]
