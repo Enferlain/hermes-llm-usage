@@ -1043,14 +1043,45 @@ export default {
       if (disposePane) return
       const size = $floatingSize.get()
       const mode = $panelMode.get()
+      if (mode === 'docked' && typeof host?.openWorkspace === 'function') {
+        // The workspace door CREATES a real right-docked tile (register +
+        // revealTreePane). Registering with `placement: 'right'` alone is only
+        // a preset hint — on a layout that has never docked this pane there is
+        // no remembered tile to claim, so a docked registration renders
+        // nowhere and the panel vanishes until the layout happens to gain a
+        // matching tile. openWorkspace is the documented door; feature-detect
+        // for older desktops and fall back to the old registration below.
+        disposePane = host.openWorkspace('llm-usage', {
+          dock: { pane: 'workspace', pos: 'right' },
+          title: 'LLM Usage',
+          render: () =>
+            jsx(UsageBoard, {
+              rest: ctx.rest,
+              mode: 'docked',
+              storage: ctx.storage,
+              onFloat: () => setPanelMode('float'),
+              onClose: () => setOpen(false),
+            }),
+          onClose: () => {
+            // The tab's own ✕: record closed state WITHOUT re-entering the
+            // teardown (host already disposed the pane; calling setOpen here
+            // would recurse through disposePane → close → onClose).
+            $floatingOpen.set(false)
+            ctx.storage.set(OPEN_STORAGE_KEY, false)
+            disposePane = null
+          },
+        })
+        return
+      }
       disposePane = ctx.register({
         // Distinct ids per mode. The host persists its dock layout tree by
         // pane id across sessions, so a shared id lets a remembered dock tile
         // resolve the floating registration and render it a second time
-        // (floating layer + dock tile). Keeping 'pane-v2' as the docked id
-        // reuses the dock slot the layout already remembers; 'pane-float-v1'
-        // is fresh so no dock tile can ever claim it. ('pane-v2' itself was
-        // versioned once to discard stale off-screen floating geometry.)
+        // (floating layer + dock tile). Keeping 'pane-v2' as the legacy docked
+        // id reuses the dock slot a pre-openWorkspace layout may remember;
+        // 'pane-float-v1' is fresh so no dock tile can ever claim it.
+        // ('pane-v2' itself was versioned once to discard stale off-screen
+        // floating geometry.)
         id: mode === 'float' ? 'pane-float-v1' : 'pane-v2',
         area: 'panes',
         title: 'LLM Usage',
