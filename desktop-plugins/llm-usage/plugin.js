@@ -2,7 +2,7 @@
  * LLM Usage — Hermes Desktop plugin
  *
  * Floating HUD (close via in-panel ✕; reopen from status-bar chip):
- *   Claude Code — Session / All models / Fable
+ *   Claude Code — Session / Weekly (all models) / Fable
  *   Grok        — Weekly
  *   Codex       — 5-hour / weekly (+ banked usage-reset pill)
  *   Nous        — Monthly plan / top-up
@@ -73,7 +73,7 @@ function shortLabel(window) {
   const id = window.id || ''
   if (id === 'session' || /session/i.test(window.label)) return 'Session'
   if (id === 'fable' || /fable/i.test(window.label)) return 'Fable'
-  if (id === 'all_models' || /all models/i.test(window.label)) return 'All models'
+  if (id === 'all_models' || /all models/i.test(window.label)) return 'Weekly (all models)'
   if (id === 'gemini_five_hour') return '5-hour Gemini'
   if (id === 'gemini_weekly') return 'Weekly Gemini'
   if (id === 'claude_gpt_five_hour') return '5-hour Claude/GPT'

@@ -23,7 +23,7 @@ At-a-glance plan windows for the providers you actually use inside Hermes:
 
 | Provider | What it shows |
 | --- | --- |
-| **Claude Code** | Session · All models · Fable (CLI `/usage`) |
+| **Claude Code** | Session · Weekly (all models) · Fable (CLI `/usage`) |
 | **Grok** | Weekly (CLI `/usage`) |
 | **Codex** | Weekly (+ 5-hour when present); banked usage-reset pill |
 | **Z.ai** | GLM Coding Plan 5-hour tokens · monthly MCP tools; plan tier |
